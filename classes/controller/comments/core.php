@@ -10,9 +10,7 @@
  */
 class Controller_Comments_Core extends Controller {
 
-	/**
-	 * @var Supported formats
-	 */
+	// Supported return formats
 	protected $supported_formats = array(
 		'.xhtml',
 		'.json',
@@ -20,14 +18,31 @@ class Controller_Comments_Core extends Controller {
 		'.rss',
 	);
 
+	// Comment model to use (based on group)
+	protected $model = 'comment';
+
+	// Pagination per-page setting (based on group)
+	protected $per_page = 10;
+
+	// View folder (based on group)
+	protected $view = 'comments';
+
 	/**
 	 * Perform format check
 	 */
 	public function before() {
+		// Make sure request is an internal request
+		if ($this->request === Request::instance())
+		{
+			Kohana::$log->add(Kohana::ERROR, 'Attempt was made to access comments controller externally');
+			$this->request->redirect('');
+		}
+
 		// Test to ensure the format requested is supported
 		if ( ! in_array($this->request->param('format'), $this->supported_formats))
 			throw new Kohana_Exception('File not found');
 
+		// Get group settings
 		$group = $this->request->param('group');
 		$config = Kohana::config('comments.'.$group);
 		$this->model    = $config['model'];
@@ -45,6 +60,7 @@ class Controller_Comments_Core extends Controller {
 
 		$id = $this->request->param('id', 0);
 
+		// Comment must have a parent
 		if ($id == 0)
 		{
 			Kohana::$log->add(Kohana::INFO, 'Attempt to create comment without a defined parent');
@@ -114,7 +130,7 @@ class Controller_Comments_Core extends Controller {
 		// Create query
 		$query = DB::select()->offset($offset);
 
-		// Create query
+		// Execute query
 		if ($parent_id == 0)
 		{
 			$comments = Sprig::factory($this->model, array(
@@ -137,6 +153,7 @@ class Controller_Comments_Core extends Controller {
 			return;
 		}
 
+		// Create pagination
 		$pagination = Pagination::factory(array(
 			'current_page'   => array('source'=>'route', 'key'=>'page'),
 			'total_items'    => $total,
@@ -164,7 +181,10 @@ class Controller_Comments_Core extends Controller {
 	 */
 	public function action_public() {
 		Kohana::$log->add(Kohana::DEBUG, 'Executing Controller_Comments_Core::action_public');
+
 		$id = $this->request->param('id', 0);
+
+		// Comment must have a parent
 		if ($id == 0)
 		{
 			Kohana::$log->add(Kohana::INFO, 'Attempt to load all public comments without a defined parent');
@@ -226,6 +246,7 @@ class Controller_Comments_Core extends Controller {
 			}
 		}
 
+		// Perform Bayesian filter teaching
 		if (isset($_POST['classify_option']) AND $_POST['classify_option'] != 'nop')
 		{
 			$option = $_POST['classify_option'];
@@ -235,30 +256,30 @@ class Controller_Comments_Core extends Controller {
 			try {
 				switch ($option)
 				{
-				case 'learn_ham':
-					$probability_before = $B8->classify($comment->text);
-					$B8->learn($comment->text, B8::HAM);
-					$probability_after = $B8->classify($comment->text);
-					Kohana::$log->add(Kohana::INFO, 'Comment learned as ham.  Probability before='.$probability_before.', after='.$probability_after);
-					break;
-				case 'learn_spam':
-					$probability_before = $B8->classify($comment->text);
-					$B8->learn($comment->text, B8::SPAM);
-					$probability_after = $B8->classify($comment->text);
-					Kohana::$log->add(Kohana::INFO, 'Comment learned as spam.  Probability before='.$probability_before.', after='.$probability_after);
-					break;
-				case 'unlearn_ham':
-					$probability_before = $B8->classify($comment->text);
-					$B8->unlearn($comment->text, B8::HAM);
-					$probability_after = $B8->classify($comment->text);
-					Kohana::$log->add(Kohana::INFO, 'Comment unlearned as ham.  Probability before='.$probability_before.', after='.$probability_after);
-					break;
-				case 'unlearn_spam':
-					$probability_before = $B8->classify($comment->text);
-					$B8->unlearn($comment->text, B8::SPAM);
-					$probability_after = $B8->classify($comment->text);
-					Kohana::$log->add(Kohana::INFO, 'Comment unlearned as spam.  Probability before='.$probability_before.', after='.$probability_after);
-					break;
+					case 'learn_ham':
+						$probability_before = $B8->classify($comment->text);
+						$B8->learn($comment->text, B8::HAM);
+						$probability_after = $B8->classify($comment->text);
+						Kohana::$log->add(Kohana::INFO, 'Comment learned as ham.  Probability before='.$probability_before.', after='.$probability_after);
+						break;
+					case 'learn_spam':
+						$probability_before = $B8->classify($comment->text);
+						$B8->learn($comment->text, B8::SPAM);
+						$probability_after = $B8->classify($comment->text);
+						Kohana::$log->add(Kohana::INFO, 'Comment learned as spam.  Probability before='.$probability_before.', after='.$probability_after);
+						break;
+					case 'unlearn_ham':
+						$probability_before = $B8->classify($comment->text);
+						$B8->unlearn($comment->text, B8::HAM);
+						$probability_after = $B8->classify($comment->text);
+						Kohana::$log->add(Kohana::INFO, 'Comment unlearned as ham.  Probability before='.$probability_before.', after='.$probability_after);
+						break;
+					case 'unlearn_spam':
+						$probability_before = $B8->classify($comment->text);
+						$B8->unlearn($comment->text, B8::SPAM);
+						$probability_after = $B8->classify($comment->text);
+						Kohana::$log->add(Kohana::INFO, 'Comment unlearned as spam.  Probability before='.$probability_before.', after='.$probability_after);
+						break;
 				}
 			}
 			catch (Exception $e)
@@ -269,6 +290,7 @@ class Controller_Comments_Core extends Controller {
 			}
 		}
 
+		// Approve the comment
 		if (isset($_POST['classify_ham']))
 		{
 			Kohana::$log->add(Kohana::DEBUG, 'Approving comment, id='.$id);
@@ -286,6 +308,7 @@ class Controller_Comments_Core extends Controller {
 			}
 		}
 
+		// Mark the comment as spam
 		if (isset($_POST['classify_spam']))
 		{
 			Kohana::$log->add(Kohana::DEBUG, 'Marking comment as spam, id='.$id);
@@ -398,7 +421,34 @@ class Controller_Comments_Core extends Controller {
 	 * Generate comment report
 	 */
 	public function action_report() {
-		Kohana::$log->add(Kohana::DEBUG, 'Executing Controller_Comments_Core::action_create');
+		Kohana::$log->add(Kohana::DEBUG, 'Executing Controller_Comments_Core::action_report');
+
+		// Determine time period
+		$seconds = $this->request->param('id', 0);
+		$now     = time();
+		$then    = strtotime('-'.$seconds.' seconds', $now);
+		$hours   = ($now - $then) / 3600;
+		Kohana::$log->add(Kohana::DEBUG, 'Fetching all comments created in the past '.$hours.' hours');
+
+		// Create query
+		$query = DB::select()->where('date', '>=', $then)->where('date', '<', $now);
+		Kohana::$log->add(Kohana::DEBUG, 'Running query '.$query);
+		$comments = Sprig::factory($this->model)->load($query, FALSE);
+
+		// Check if there are any comments to report
+		if ($comments->count() == 0)
+		{
+			$this->request->response = __('No comments have been created in the past '.$hours.' hours');
+			return;
+		}
+
+		// Setup view with data
+		$list = View::factory($this->view.'/report')
+			->set('legend', 'Comments created in the past '.$hours.' hours')
+			->set('comments', $comments);
+
+		// Set request response
+		$this->request->response = $list;
 	}
 
 }	// End of Controller_Comments_Core
