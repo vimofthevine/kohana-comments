@@ -27,6 +27,9 @@ class Controller_Comments_Core extends Controller {
 	// View folder (based on group)
 	protected $view = 'comments';
 
+	// Group config
+	protected $config = NULL;
+
 	/**
 	 * Perform format check
 	 */
@@ -48,6 +51,7 @@ class Controller_Comments_Core extends Controller {
 		$this->model    = $config['model'];
 		$this->per_page = $config['per_page'];
 		$this->view     = $config['view'];
+		$this->config   = $config;
 
 		return parent::before();
 	}
@@ -70,6 +74,27 @@ class Controller_Comments_Core extends Controller {
 
 		$comment = Sprig::factory($this->model)->values($_POST);
 		$comment->parent = $id;
+
+		// Perform Bayesian classification
+		$B8 = B8::factory();
+		$probability = $B8->classify($comment->text);
+		$state = 'queued';
+		if ($probability < $this->config['lower_limit'])
+		{
+			Kohana::$log->add(Kohana::DEBUG, 'Comment has been classified as ham');
+			$state = 'ham';
+		}
+		else if ($probability > $this->config['upper_limit'])
+		{
+			Kohana::$log->add(Kohana::DEBUG, 'Comment has been classified as spam');
+			$state = 'spam';
+		}
+		else
+		{
+			Kohana::$log->add(Kohana::DEBUG, 'Comment has been placed in the moderation queue');
+			$state = 'queued';
+		}
+		$comment->state = $state;
 
 		try
 		{
@@ -128,7 +153,7 @@ class Controller_Comments_Core extends Controller {
 		$offset = ($page - 1) * $this->per_page;
 
 		// Create query
-		$query = DB::select()->offset($offset);
+		$query = DB::select()->offset($offset)->order_by('date', $this->config['order']);
 
 		// Execute query
 		if ($parent_id == 0)
@@ -431,7 +456,8 @@ class Controller_Comments_Core extends Controller {
 		Kohana::$log->add(Kohana::DEBUG, 'Fetching all comments created in the past '.$hours.' hours');
 
 		// Create query
-		$query = DB::select()->where('date', '>=', $then)->where('date', '<', $now);
+		$query = DB::select()->where('date', '>=', $then)->where('date', '<', $now)
+			->order_by('date', $this->config['order']);
 		Kohana::$log->add(Kohana::DEBUG, 'Running query '.$query);
 		$comments = Sprig::factory($this->model)->load($query, FALSE);
 
